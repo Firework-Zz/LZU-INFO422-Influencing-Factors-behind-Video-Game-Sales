@@ -91,7 +91,7 @@ Based on domain knowledge and industry literature, the team formulated the follo
 
 - **H1 (Platform-Genre):** Specific platform-genre combinations (e.g., Shooter on Xbox, RPG on PlayStation) will show significantly higher median sales than the average, reflecting platform demographics and genre-audience alignment.
 - **H2 (Regional):** Regional markets exhibit distinct genre preferences shaped by cultural factors. Japan will show elevated RPG and Visual Novel sales; North America will favor Shooter and Sports genres.
-- **H3 (Brand):** Publisher and developer brand identity has a measurable impact on sales, operating through two channels: (a) scale — the number of games released, reflecting distribution reach and market power — and (b) prestige — the per-title sales premium associated with the brand name, independent of genre and platform.
+- **H3 (Brand):** Publisher and developer brand identity has a measurable impact on sales, operating through two channels: (a) scale — the number of games released, reflecting distribution reach and market power; and (b) prestige — the per-title sales premium associated with the brand name, independent of genre and platform.
 
 ---
 
@@ -131,6 +131,14 @@ The dataset is sourced from **VGChartz** (vgchartz.com), a leading video game sa
 | `other_sales` | Numerical (millions) | Rest of world sales |
 | `release_date` | Date | Original release date |
 | `last_update` | Date | Data last updated timestamp (excluded) |
+
+Below is a preview of the raw dataset structure:
+
+![Dataset Preview Part 1](images/dataset_part1.png)
+*Figure 1: Raw dataset preview showing game attributes including title, console, genre, publisher, and sales columns*
+
+![Dataset Preview Part 2](images/dataset_part2.png)
+*Figure 2: Raw dataset preview (continued) showing critic scores, release dates, and regional sales breakdown*
 
 ### 3.4 Ethical Considerations
 
@@ -181,9 +189,48 @@ Three metrics are used for model evaluation:
 
 ## 5. Phase 1: Data Acquisition and Preprocessing (M2 & M3)
 
-### 5.1 Preprocessing Pipeline
+### 5.1 Preprocessing Pipeline Architecture
 
-The raw data underwent a three-phase preprocessing pipeline: **Data Cleaning → Data Reduction → Data Transformation**. The complete pipeline is documented below.
+The raw data underwent a three-phase preprocessing pipeline: **Data Cleaning → Data Reduction → Data Transformation**. The complete pipeline is outlined below:
+
+```
+Raw Data (64,016 × 14)
+    │
+    ▼
+╔══════════════════════════════════════╗
+║ PHASE 1: DATA CLEANING              ║
+╠══════════════════════════════════════╣
+║ 1.1 Column Selection ────────► (64,016 × 11) ║
+║ 1.2 Categorical Imputation ──► ("Unknown")   ║
+║ 1.3 Regional Sales Imputation ► (NaN → 0)    ║
+║ 1.4 Critic Score Imputation ──► (median)     ║
+║ 1.5 Sales Filtering ──────────► (17,570 × 11)║
+║ 1.6 Outlier Flagging (IQR) ───► (17,570 × 16)║
+╚══════════════════════════════════════╝
+    │
+    ▼
+╔══════════════════════════════════════╗
+║ PHASE 2: DATA REDUCTION             ║
+╠══════════════════════════════════════╣
+║ 2.1 Stratified Sampling ─────► (8,786 × 16)  ║
+║ 2.2 K-Means Clustering ──────► (+sales_cluster)║
+║ 2.3 Console×Genre Aggregation► (270 combos)  ║
+╚══════════════════════════════════════╝
+    │
+    ▼
+╔══════════════════════════════════════╗
+║ PHASE 3: DATA TRANSFORMATION        ║
+╠══════════════════════════════════════╣
+║ 3.1 Text Normalization ──────► (uppercase, dedup)║
+║ 3.2 Log Transformation ──────► (log_sales)       ║
+║ 3.3 Normalization ───────────► (Min-Max + Z-Score)║
+║ 3.4 Date Discretization ─────► (5 equal-freq bins)║
+║ 3.5 Derived Features ────────► (ratios, brands)  ║
+╚══════════════════════════════════════╝
+    │
+    ▼
+Final Dataset (8,786 × 33) ✓
+```
 
 ### 5.2 Data Cleaning (Phase 1)
 
@@ -250,27 +297,49 @@ The raw data underwent a three-phase preprocessing pipeline: **Data Cleaning →
 
 ### 6.1 Univariate Analysis
 
-**Sales Distribution (Viz 1–2):** Raw `total_sales` follows an extreme right-skewed distribution (skewness = 8.04). The mean (0.364M) is 2.6× the median (0.140M), confirming the classic hit-driven nature of the video game market: a tiny fraction of titles generate the majority of revenue. Log transformation reduces skewness by 68% to 2.55, producing a distribution suitable for parametric modeling. The Q-Q plot shows good linearity in the central 95% despite formal non-normality (Shapiro-Wilk p < 0.001, as expected for large real-world datasets).
+**Sales Distribution (Viz 1–2):** Raw `total_sales` follows an extreme right-skewed distribution (skewness = 8.04). The mean (0.364M) is 2.6× the median (0.140M), confirming the classic hit-driven nature of the video game market: a tiny fraction of titles generate the majority of revenue.
 
-**Critic Score Distribution (Viz 3):** Critic scores cluster near 7.5 (mean = 7.42, median = 7.50) with limited variance (SD = 0.68). A notable spike at 7.50 reflects median imputation of ~2,300 missing scores. Critic scores show surprisingly little variation across platforms — most platforms' median scores fall between 7.0 and 8.0 — suggesting that review aggregation normalizes scores across the industry.
+![Sales Distribution](M4/images/viz01_sales_distribution.png)
+*Figure 3: Visualization 1 — Raw total_sales distribution. Mean (red) far exceeds median (orange); log-scale view reveals orders-of-magnitude spread from niche titles to blockbusters.*
 
-**Genre Class Balance (Viz 4):** The genre distribution is moderately imbalanced. The top 3 genres (ACTION 15.3%, SPORTS 14.1%, MISC 10.4%) account for 39.8% of records. The long tail includes SANDBOX (1), BOARD GAME (2), and EDUCATION (2) — genres that require special handling or grouping in per-genre analyses.
+Log transformation reduces skewness by 68% to 2.55, producing a distribution suitable for parametric modeling. The Q-Q plot shows good linearity in the central 95% despite formal non-normality (Shapiro-Wilk p < 0.001, as expected for large real-world datasets).
+
+![Log Sales Distribution](M4/images/viz02_log_sales_distribution.png)
+*Figure 4: Visualization 2 — log_sales distribution with normal overlay, box plot, and Q-Q plot. Skewness drops from 8.04 to 2.55; the distribution is well-behaved for parametric modeling.*
+
+**Critic Score Distribution (Viz 3):** Critic scores cluster near 7.5 (mean = 7.42, median = 7.50) with limited variance (SD = 0.68). A notable spike at 7.50 reflects median imputation of ~2,300 missing scores. Critic scores show surprisingly little variation across platforms — most platforms' median scores fall between 7.0 and 8.0.
+
+![Critic Score Distribution](M4/images/viz03_critic_score_distribution.png)
+*Figure 5: Visualization 3 — Critic_score distribution showing a spike at the imputed median (7.50). Platform-level box plots reveal minimal cross-platform variation.*
+
+**Genre Class Balance (Viz 4):** The genre distribution is moderately imbalanced. The top 3 genres (ACTION 15.3%, SPORTS 14.1%, MISC 10.4%) account for 39.8% of records. The long tail includes SANDBOX (1), BOARD GAME (2), and EDUCATION (2).
+
+![Genre Class Balance](M4/images/viz04_genre_class_balance.png)
+*Figure 6: Visualization 4 — Genre class balance. Top 3 genres cover ~40% of data; 7 genres reach the 70% threshold. Rare genres (<1%) require aggregation for reliable analysis.*
 
 ### 6.2 Bivariate Analysis
 
-**Sales by Platform (Viz 5):** Nintendo DS and PS2 dominate in game volume (~1,055 each), reflecting their status as best-selling platforms. However, median sales are remarkably uniform across platforms (0.05M–0.20M). The differentiation appears in the upper quartile: later-generation consoles (PS4, Xbox One) show slightly higher median sales, consistent with industry consolidation toward fewer, higher-budget titles. PC has the lowest median sales, likely from undercounted digital distribution.
+**Sales by Platform (Viz 5):** Nintendo DS and PS2 dominate in game volume (~1,055 each), reflecting their status as best-selling platforms. However, median sales are remarkably uniform across platforms (0.05M–0.20M). The differentiation appears in the upper quartile. PC has the lowest median sales, likely from undercounted digital distribution.
 
-**Sales by Genre (Viz 6):** Genre differentiates sales more strongly than platform. SHOOTER and ROLE-PLAYING genres exhibit the highest median sales and widest spread, reflecting blockbuster economics. SPORTS titles show compressed distributions (annualized franchises with reliable but capped sales). MISC is bimodal — a catch-all category mixing niche titles and breakout hits.
+![Sales by Console](M4/images/viz05_sales_by_console.png)
+*Figure 7: Visualization 5 — Sales distribution by console platform. DS and PS2 lead in volume; PS4 and X360 show elevated upper-tail outliers.*
 
-**Critic Score vs. Sales (Viz 7):** A remarkably weak correlation exists between critic scores and sales (Pearson r ≈ 0.05, Spearman ρ ≈ 0.05). Critic score alone explains less than 0.5% of sales variance. Even games with perfect 10.0 scores span the full sales range. This confirms that commercial success in gaming is driven by factors beyond critical reception — marketing, brand, timing, and platform strategy likely dominate.
+**Sales by Genre (Viz 6):** Genre differentiates sales more strongly than platform. SHOOTER and ROLE-PLAYING genres exhibit the highest median sales and widest spread. SPORTS titles show compressed distributions (annualized franchises). MISC is bimodal.
 
-**Console × Genre Heatmap (Viz 8):** This directly addresses Q1. High-performing combinations include:
-- PS4 × SPORTS (median 0.75M)
-- PS3 × FIGHTING (median 0.74M)
-- X360 × SHOOTER (median 0.64M)
-- Xbox One × SHOOTER (median 0.70M)
+![Sales by Genre](M4/images/viz06_sales_by_genre.png)
+*Figure 8: Visualization 6 — Sales by genre. SHOOTER and ROLE-PLAYING show the highest medians; SPORTS is compressed (annualized releases); MISC is bimodal.*
 
-PC is consistently low across all genres (0.02M–0.07M), reinforcing the digital sales undercount concern. **Key insight:** Platform-genre interactions are meaningful and concentrated in specific high-value combinations, validating the inclusion of interaction terms in modeling.
+**Critic Score vs. Sales (Viz 7):** A remarkably weak correlation exists between critic scores and sales (Pearson r ≈ 0.05, Spearman ρ ≈ 0.05). Critic score alone explains less than 0.5% of sales variance.
+
+![Critic Score vs Sales](M4/images/viz07_critic_vs_sales.png)
+*Figure 9: Visualization 7 — Critic_score vs. log_sales hexbin plot. The binned mean trend (blue) shows a weak positive slope; scatter is enormous at all score levels.*
+
+**Console × Genre Heatmap (Viz 8):** This directly addresses Q1. High-performing combinations include PS4 × SPORTS (0.75M), PS3 × FIGHTING (0.74M), X360 × SHOOTER (0.64M), and Xbox One × SHOOTER (0.70M). PC is consistently low across all genres.
+
+![Console × Genre Heatmap](M4/images/viz08_console_genre_heatmap.png)
+*Figure 10: Visualization 8 — Median sales heatmap for Console × Genre combinations. Dark cells indicate high premium combos: PS4×Sports, PS3×Fighting, X360×Shooter.*
+
+**Key insight:** Platform-genre interactions are meaningful and concentrated in specific high-value combinations, validating the inclusion of interaction terms in modeling.
 
 ### 6.3 Multivariate Analysis
 
@@ -282,73 +351,88 @@ PC is consistently low across all genres (0.02M–0.07M), reinforcing the digita
 | Japan | RPG, VISUAL NOVEL, FIGHTING | jp_ratio > 0.35 (RPG) |
 | Europe/PAL | RACING, PLATFORM, SPORTS | Elevated pal_ratio |
 
-North America dominates in absolute volume, but proportional analysis reveals genuine cultural preferences. Japan's RPG affinity (jp_ratio > 0.35) contrasts sharply with NA's shooter preference. The Japan market has 63.7% zero-imputed data, so these patterns are directional rather than precisely quantified.
+![Regional Sales Patterns](M4/images/viz09_regional_sales_patterns.png)
+*Figure 11: Visualization 9 — Regional sales patterns by genre. Stacked bar (left) shows normalized proportions; absolute sales (right) reflect market size differences. Japan shows distinct RPG/VN preferences.*
+
+North America dominates in absolute volume, but proportional analysis reveals genuine cultural preferences. Japan's RPG affinity (jp_ratio > 0.35) contrasts sharply with NA's shooter preference.
 
 **K-Means Cluster Characterization (Viz 10):** The four clusters correspond to interpretable market tiers:
-- **Blockbuster (2.7%):** Median 3.58M sales, dominated by Action and Shooter genres on PS3/PS4/X360
+- **Blockbuster (2.7%):** Median 3.58M sales, dominated by Action and Shooter on PS3/PS4/X360
 - **Mainstream (67.8%):** Median 0.29M, balanced genre/platform distribution
-- **Mid-tier (5.2%):** Elevated Sports and Racing presence (annualized franchises)
-- **Budget/Niche (24.3%):** Over-represented by MISC and Adventure on handheld platforms
+- **Mid-tier (5.2%):** Elevated Sports/Racing (annualized franchises)
+- **Budget/Niche (24.3%):** Over-represented by MISC/Adventure on handheld platforms
 
-Critic scores vary minimally across clusters (7.4–7.6), confirming that critical reception is not the primary commercial differentiator. The cluster structure motivates the two-stage modeling approach: classify the tier first, then predict within-tier sales.
+![K-Means Clusters](M4/images/viz10_kmeans_clusters.png)
+*Figure 12: Visualization 10 — K-Means cluster characterization (K=4). Four panels show sales distribution, genre composition, platform composition, and critic scores by cluster. Cluster 1 (2.7%) = Blockbuster tier.*
+
+Critic scores vary minimally across clusters (7.4–7.6), confirming that critical reception is not the primary commercial differentiator. The cluster structure motivates a two-stage modeling approach.
 
 **Publisher Brand Analysis (Viz 11):** Publisher strategies diverge into two categories:
+- **Volume publishers** (EA, Ubisoft, Konami): Many games, moderate per-title sales, broad coverage.
+- **Prestige publishers** (Nintendo, Rockstar, Bethesda): Fewer games, higher per-title premiums.
+- Nintendo achieves both high volume and high per-title premium.
 
-- **Volume publishers** (EA, Ubisoft, Konami): Many games, moderate per-title sales, broad platform/genre coverage.
-- **Prestige publishers** (Nintendo, Rockstar, Bethesda): Fewer games, higher per-title premiums, selective release strategy.
-- Nintendo emerges as an outlier — achieving both high volume and high per-title premium — representing the industry gold standard.
+![Publisher Brand Analysis](M4/images/viz11_publisher_brand.png)
+*Figure 13: Visualization 11 — Top 20 publisher brand analysis. Four panels show revenue concentration, volume vs. quality scatter, sales vs. critic reception, and platform vs. genre breadth strategy.*
 
-**Correlation Matrix (Viz 12):** Western regional sales (NA, PAL, Other) are highly intercorrelated (ρ > 0.6), while Japan sales show weaker correlation (ρ ≈ 0.3–0.4), confirming Japan's market distinctiveness. `publisher_game_count` and `developer_game_count` are highly correlated (ρ > 0.8) — only one should enter any given model to avoid multicollinearity.
+**Correlation Matrix (Viz 12):** Western regional sales (NA, PAL, Other) are highly intercorrelated (ρ > 0.6), while Japan sales show weaker correlation (ρ ≈ 0.3–0.4). `publisher_game_count` and `developer_game_count` are highly correlated (ρ > 0.8).
+
+![Correlation Matrix](M4/images/viz12_correlation_matrix.png)
+*Figure 14: Visualization 12 — Spearman correlation matrix of numerical features (left) and feature correlations with log_sales target (right). NA/PAL markets are highly correlated; Japan is distinct.*
 
 ### 6.4 Revised Hypotheses
 
 Based on EDA findings, the hypotheses were refined:
 
-- **H1 (Platform-Genre):** Supported. The interaction is meaningful but concentrated in the upper quartile. SH-Directly answer the three Qs: OOTER/RPG carry a premium; handhelds excel in niche genres.
-- **H2 (Regional):** Strongly supported. Three regional clusters identified with distinct genre preferences. The Japan data quality issue (63.7% zeros) is a noted limitation.
-- **H3 (Brand):** Supported. Brand operates through two separable mechanisms: scale (publisher_game_count) and prestige (publisher identity fixed effects). Both should be modeled separately.
-
-### 6.5 Modelling Question
-
-The EDA led to the following formal modeling question:
-
-> **"Can we predict a video game's global sales (`log_sales`) using its platform, genre, publisher, developer, critic score, and release era, and quantify each factor's relative importance?"**
-
-**Planned approach:** Linear Regression (interpretable baseline), Random Forest (non-linear interactions), Two-Stage Blockbuster-Aware (addresses long-tail underestimation).
+- **H1 (Platform-Genre):** Supported. The interaction is meaningful but concentrated in the upper quartile. SHOOTER/RPG carry a premium; handhelds excel in niche genres.
+- **H2 (Regional):** Strongly supported. Three regional clusters identified with distinct genre preferences. Japan data quality (63.7% zeros) is a noted limitation.
+- **H3 (Brand):** Supported. Brand operates through two separable mechanisms: scale (publisher_game_count) and prestige (publisher identity fixed effects).
 
 ---
 
 ## 7. Phase 3: Predictive Modeling and Validation (M5)
 
-### 7.1 Model Architecture
+### 7.1 Feature Engineering for Modeling
 
-Three models were built and evaluated using the preprocessed dataset (8,786 records, 33 features, 80/20 train-test split stratified by genre).
+The 33-feature enriched dataset was prepared for modeling with the following transformations:
+
+- **Target variable:** `log_sales` (log-transformed total sales)
+- **Low-cardinality categoricals** (console, genre, release_year_bin): One-Hot Encoding
+- **High-cardinality categoricals** (publisher ~551, developer ~2,500): Target Encoding with smoothing = 10
+- **Numerical features** (critic_score, publisher_game_count, developer_game_count): Z-score standardization
+- **Excluded features:** Raw regional sales columns removed to avoid data leakage with `total_sales`
+- **Train-test split:** 80/20 stratified by genre (7,028 training / 1,758 test)
+
+### 7.2 Model Architecture
+
+Three models were built and evaluated:
 
 #### Model 1: Multiple Linear Regression (Interpretable Baseline)
 
-MLR fits a linear relationship between features and `log_sales`, providing interpretable coefficients. It serves as a baseline to quantify the lower bound of predictive power from linear effects. Low-cardinality categoricals (console, genre, release era) received one-hot encoding; high-cardinality features (publisher, developer) used target encoding (smoothing = 10); numerical features were Z-score standardized.
+MLR fits a linear relationship between features and `log_sales`, providing interpretable coefficients. It serves as a baseline to quantify the lower bound of predictive power from linear effects.
 
-**Justification:** Directly quantifies linear feature effects, aligns with ANOVA findings from EDA, provides statistical significance tests, and requires minimal computation.
+**Justification:** Directly quantifies linear feature effects, aligns with ANOVA findings from EDA, provides statistical significance tests, requires minimal computation.
 
 #### Model 2: Random Forest Regressor (Production Model)
 
 Random Forest is an ensemble of 100 decision trees (max_depth=15, min_samples_leaf=10), averaging predictions to reduce overfitting.
 
-**Justification:** Captures the non-linear interactions and feature interactions identified in EDA (platform-genre synergy, non-linear brand-scale effects) that linear models miss. Native feature importance scores directly quantify each factor's contribution. Robust to outliers and performs reliably with default parameters.
+**Justification:** Captures non-linear interactions and feature interactions identified in EDA (platform-genre synergy, non-linear brand-scale effects). Native feature importance scores directly quantify each factor's contribution. Robust to outliers with minimal tuning required.
 
 #### Model 3: Two-Stage Blockbuster-Aware Model (Specialized Variant)
 
 This model directly attacks the systematic blockbuster underestimation exposed by the Random Forest residual analysis (predicted mean log_sales of 0.88 vs. actual mean of 1.87 for blockbusters).
 
 **Architecture — Hybrid Blend:**
+
 1. **Stage 1 — Classifier:** A `class_weight="balanced"` Random Forest classifier predicts blockbuster probability.
 2. **Stage 2 — Dedicated Regressor:** A Random Forest trained exclusively on 62 blockbuster training records (total_sales > 3.5M).
-3. **Blending Rule:** The global Random Forest is the base predictor for every game. Titles with classifier probability ≥ 0.60 receive a blended prediction:
+3. **Blending Rule:** The global Random Forest is the base predictor for every game. Titles with classifier probability ≥ 0.60 receive:
    `final_pred = 0.30 × blockbuster_reg + 0.70 × base_rf`
 
 A soft blend was chosen over hard routing because blockbusters constitute only 0.9% of the data — a pure two-stage model would misroute too many non-blockbusters.
 
-### 7.2 Model Performance
+### 7.3 Model Performance
 
 #### Cross-Validation (5-Fold, Stratified)
 
@@ -379,19 +463,21 @@ A soft blend was chosen over hard routing because blockbusters constitute only 0
 | Recall | 0.44 |
 | F1 | 0.24 |
 
-The low precision confirms blockbuster identification from pre-release attributes alone is intrinsically hard — exactly why a soft blend (not hard routing) is used.
+The low precision confirms blockbuster identification from pre-release attributes alone is intrinsically hard — exactly why a soft blend (not hard routing) is used. The modest 6.7% RMSE improvement empirically confirms that blockbuster data scarcity, not model architecture, is the binding constraint.
 
-### 7.3 Performance Analysis
+### 7.4 Performance Visualizations
 
-**Non-linear advantage:** Random Forest outperforms Linear Regression by 26% in R², 6.1% in RMSE, and 8.4% in MAE, confirming that non-linear interactions contribute substantially to sales prediction accuracy.
+The residual plot below shows the prediction error distribution for the two-stage model. Residuals are centered on zero for mid-range sales but fan out at higher values — the structural pattern the two-stage model was designed to mitigate.
 
-**Strong generalization:** No performance drop from cross-validation to holdout test set, indicating no severe overfitting.
+![Residual Plot](M5/images/viz0_residuals_two_stage.png)
+*Figure 15: M5 Visualization 0 — Residual plot for the two-stage blockbuster-aware model. Residuals fan out at higher predicted values, confirming variance grows with sales magnitude.*
 
-**Two-stage trade-off:** The two-stage model sacrifices 1.6 percentage points of overall R² to achieve a 6.7% improvement in blockbuster-segment RMSE. The Random Forest is recommended for general forecasting; the two-stage variant is preferred when blockbuster accuracy is prioritized.
+The model performance comparison chart demonstrates that the Random Forest model delivers highest R² and lowest RMSE. The two-stage variant makes a strategic trade-off: slightly lower overall R² for improved blockbuster accuracy.
 
-**Binding constraint:** The modest two-stage improvement empirically confirms that blockbuster scarcity — not model architecture — is the binding constraint on prediction accuracy.
+![Model Performance Comparison](M5/images/viz1_model_performance_comparison.png)
+*Figure 16: M5 Visualization 1 — Model performance comparison (R² and RMSE). Random Forest leads across both metrics; two-stage trades modest R² for blockbuster RMSE improvement.*
 
-### 7.4 Feature Importance
+### 7.5 Feature Importance Analysis
 
 The Random Forest feature importance ranking reveals the top sales drivers:
 
@@ -403,30 +489,27 @@ The Random Forest feature importance ranking reveals the top sales drivers:
 | 4 | publisher (target-encoded) | 0.066 | Brand/Prestige |
 | 5 | publisher_game_count | 0.040 | Brand/Scale |
 | 6–10 | console features (various) | 0.010–0.033 | Platform |
-| — | genre features | < 0.010 | Genre |
 
-**Key findings for research questions:**
-- **Q1 (Platform-Genre):** Console and genre features are present in the top 10, confirming their independent effects. The 26% R² lift from linear to non-linear models validates the importance of platform-genre interactions.
-- **Q2 (Regional):** Regional patterns were validated through EDA visualizations and correlation analysis. Genre features show heterogeneous predictive power across regional sub-markets.
-- **Q3 (Brand):** Fully validated. Brand scale (`publisher_game_count`/`developer_game_count`) and brand prestige (target-encoded publisher/developer identity) both rank among the top features, confirming the dual-channel brand effect hypothesis.
+![Feature Importance Ranking](M5/images/viz2_feature_importance_ranking.png)
+*Figure 17: M5 Visualization 2 — Top 10 feature importance ranking (Random Forest). Developer target-encoding dominates; critic_score and brand scale metrics follow. Platform and genre effects are secondary.*
 
-### 7.5 Stakeholder Visualizations
+The actual vs. predicted scatter plot confirms both models perform reliably for mid-to-low sales games, with the two-stage variant visibly tightening the upper tail.
 
-Five stakeholder-facing visualizations were produced:
+![Actual vs Predicted Sales](M5/images/viz3_actual_vs_predicted_sales.png)
+*Figure 18: M5 Visualization 3 — Actual vs. predicted log_sales for Random Forest (left) and Two-Stage RF (right). The two-stage model lifts previously under-predicted blockbuster points toward the diagonal.*
 
-1. **Residual Plot:** Shows prediction errors centered on zero for mid-range sales but fanning out at higher values — the pattern the two-stage model was designed to mitigate.
-2. **Model Performance Comparison:** Side-by-side bar chart of R² and RMSE across all three models, justifying Random Forest adoption for production.
-3. **Feature Importance Ranking:** Horizontal bar chart of top 10 features — publisher brand scale dominates.
-4. **Actual vs. Predicted Scatter:** Comparison showing both models perform reliably for mid-to-low sales, with the two-stage variant tightening the upper tail.
-5. **Blockbuster RMSE Lift:** Quantifies the 6.7% blockbuster RMSE improvement from the two-stage variant.
+The blockbuster RMSE comparison directly quantifies the two-stage model's improvement on the target segment.
 
-### 7.6 Research Question Validation
+![Blockbuster RMSE Lift](M5/images/viz4_blockbuster_rmse_lift.png)
+*Figure 19: M5 Visualization 4 — Blockbuster prediction RMSE comparison. The two-stage model reduces RMSE from 1.085 to 1.012, a 6.7% improvement on the 18 test blockbusters.*
 
-**Q1 — Platform-Genre Sales Advantage (Confirmed):** Platform and genre features rank in the top 10 of feature importance, confirming independent effects on sales. The non-linear gain validates that platform-genre interaction effects are meaningful, with combinations like PS4 × Sports and X360 × Shooter delivering significant premiums.
+### 7.6 Key Findings for Research Questions
+
+**Q1 — Platform-Genre Sales Advantage (Confirmed):** Platform and genre features rank in the top 10 of feature importance, confirming independent effects on sales. The 26% R² lift from linear to non-linear models validates that platform-genre interaction effects are meaningful, with combinations like PS4 × Sports and X360 × Shooter delivering significant premiums.
 
 **Q2 — Genre-Regional Impact (Confirmed, with caveats):** Regional preference patterns are clear from EDA (Viz 9) and validated by the model's feature logic. However, the 63.7% zero-imputation rate for Japan sales limits quantitative verification in the global model. Dedicated regional sub-models are recommended.
 
-**Q3 — Brand Effect (Confirmed):** Both brand channels — scale (`publisher_game_count` at rank 1) and prestige (target-encoded publisher at rank 4) — are top features. Brand influence on sales is the strongest finding of the analysis.
+**Q3 — Brand Effect (Confirmed):** Both brand channels — scale (`publisher_game_count` at rank 3) and prestige (target-encoded developer at rank 1, publisher at rank 4) — are top features. Brand influence on sales is the single strongest finding of the analysis.
 
 ---
 
@@ -440,7 +523,7 @@ A fully functional Streamlit web application was developed and deployed, enablin
 - **Sidebar input form:** Dropdown selectors for console, genre, and release era; text input for publisher and developer with autocomplete suggestions; slider for critic score.
 - **Prediction output:** Dual predictions from the Random Forest (recommended for general use) and the two-stage blockbuster-aware variant (better for high-budget projects).
 - **Blockbuster probability:** Displays the predicted blockbuster probability and classification label.
-- **Top feature drivers:** Shows the top 8 features and their relative importance for the specific prediction, highlighting if the user's selected console, genre, or publisher is a top predictor.
+- **Top feature drivers:** Shows the top 8 features and their relative importance for the specific prediction.
 - **Model performance reference:** Displays the M5 test set performance table for stakeholder transparency.
 
 **Technology:** Streamlit (Python), joblib for model persistence, deployed via Vercel.
@@ -448,6 +531,7 @@ A fully functional Streamlit web application was developed and deployed, enablin
 ### 8.2 Model Card
 
 A comprehensive model card was created following the Google Model Cards for Model Reporting framework, documenting:
+
 - **Intended use:** Sales forecasting for mainstream mid-budget video games. Supports marketing budget allocation, project risk assessment, and portfolio planning.
 - **Do NOT use for:** Blockbuster prediction at high precision, brand-new platforms with no historical data, digital-only monetization models not in the training data.
 - **Factors:** 8 input features with appropriate encodings (one-hot, target encoding, Z-score).
@@ -456,14 +540,7 @@ A comprehensive model card was created following the Google Model Cards for Mode
 
 ### 8.3 Presentation
 
-A structured 7-minute presentation director's guide was prepared, covering:
-- Research objectives and business context
-- Data pipeline and preprocessing summary
-- Three EDA insight sections (platform-genre synergy, regional clusters, brand mechanisms)
-- Modeling approach and performance comparison
-- Live app demo
-- Recommendations and limitations
-- Conclusion with Q&A anticipation
+A structured 7-minute presentation director's guide was prepared, covering research objectives, data pipeline, EDA insights (platform-genre synergy, regional clusters, brand mechanisms), modeling approach, live app demo, recommendations, and limitations. The presentation is supported by a visual asset mapping table referencing all key figures from M4 and M5.
 
 ---
 
@@ -481,7 +558,7 @@ A structured 7-minute presentation director's guide was prepared, covering:
 - Later-generation home consoles show higher per-game sales, reflecting industry consolidation.
 - The 26% R² lift from linear to non-linear models quantitatively validates that platform-genre synergy matters.
 
-**Business implication:** Platform-genre strategy should be a deliberate component of release planning, not an afterthought.
+**Business implication:** Platform-genre strategy should be a deliberate component of release planning.
 
 #### Q2: Genre-Regional Impact
 
@@ -495,43 +572,29 @@ Western regional markets (NA, PAL, Other) are highly correlated (ρ > 0.6), whil
 
 **Caveat:** Japan sales data has 63.7% zero-imputation due to incomplete VGChartz coverage. Japan-specific conclusions should be treated as directional rather than definitive.
 
-**Business implication:** Genre-based regional marketing strategies can significantly improve market penetration. One-size-fits-all genre strategies underperform.
+**Business implication:** Genre-based regional marketing strategies can significantly improve market penetration.
 
 #### Q3: Brand Effect
 
 **Finding confirmed.** Brand influence on sales operates through two empirically separable channels:
 
-1. **Scale channel (dominant):** Publishers with high game volumes achieve distribution, marketing, and platform-access advantages. `publisher_game_count` is the single most important feature in the Random Forest model.
+1. **Scale channel (dominant):** Publishers with high game volumes achieve distribution, marketing, and platform-access advantages. `publisher_game_count` is a top-5 feature.
 
-2. **Prestige channel (significant):** Certain publishers and developers command a per-title premium above what genre, platform, and scale alone would predict. Nintendo uniquely achieves both high volume and high per-title premium.
+2. **Prestige channel (significant):** Certain publishers and developers command a per-title premium above what genre, platform, and scale alone would predict. Target-encoded developer identity is the #1 feature.
 
-The dual-channel model is validated by both EDA (Viz 11) and predictive modeling (both scale and identity features appear in the top 5 feature importance ranks).
+Nintendo uniquely achieves both high volume and high per-title premium, representing the gold standard.
 
-**Business implication:** New game studios should partner with established publishers for distribution scale. Simultaneously, building brand prestige through consistent quality creates additional premium value.
+**Business implication:** New game studios should partner with established publishers for distribution scale. Building brand prestige through consistent quality creates additional premium value.
 
 ### 9.2 Model Performance Summary
 
-| Model | R² | RMSE | MAE | Best For |
-|---|---|---|---|---|
-| Multiple Linear Regression | 0.312 | 0.259 | 0.173 | Interpretable baseline, linear effects |
-| Random Forest Regressor | **0.394** | **0.243** | **0.159** | General forecasting (recommended) |
-| Two-Stage Blockbuster-Aware | 0.378 | 0.247 | 0.159 | Blockbuster-focused prediction |
-
-### 9.3 Key Visualizations
-
-The project produced 17+ visualizations across all phases, including:
-- Sales distribution (raw and log-transformed)
-- Genre and platform class balance
-- Console × Genre sales heatmap
-- Regional sales preference patterns
-- K-Means cluster characterization
-- Publisher brand analysis
-- Correlation matrix
-- Model performance comparison
-- Feature importance ranking
-- Actual vs. predicted scatter plots
-- Residual analysis
-- Blockbuster RMSE lift
+| Metric | Linear Regression | Random Forest | Two-Stage |
+|---|---|---|---|
+| R² | 0.312 | **0.394** | 0.378 |
+| RMSE | 0.259 | **0.243** | 0.247 |
+| MAE | 0.173 | **0.159** | 0.159 |
+| Blockbuster RMSE | — | 1.085 | **1.012** (−6.7%) |
+| **Best For** | Interpretable baseline | General forecasting | Blockbuster priority |
 
 ---
 
@@ -542,34 +605,27 @@ Based on the empirical findings, the following actionable recommendations are ma
 ### 10.1 Strategic Recommendations
 
 **1. Partner with Established Publishers (Highest Impact)**
-Publisher brand scale is the single strongest predictor of game sales. New studios and independent developers should prioritize publishing partnerships with established entities to access distribution, marketing, and platform-access advantages. The data shows that publisher scale confers benefits that are difficult to replicate independently.
+Publisher brand scale is among the strongest predictors of game sales. New studios and independent developers should prioritize publishing partnerships with established entities to access distribution, marketing, and platform-access advantages.
 
 **2. Prioritize Game Quality (Significant Impact)**
-While critic score alone shows weak correlation with sales, it ranks as the second most important feature in the Random Forest model, indicating non-linear effects. Games scoring in the top decile (9.0+) demonstrate disproportionately higher sales. Investment in quality is justified, though it should not come at the expense of marketing and distribution.
+While critic score alone shows weak correlation with sales, it ranks as the second most important feature in the Random Forest model — indicating non-linear effects. Games scoring in the top decile (9.0+) demonstrate disproportionately higher sales.
 
 **3. Use Platform-Genre Strategy (Measurable Impact)**
-Platform-genre synergy is real and concentrated in specific combinations. Release planners should:
-- Pair Shooters with Xbox/PlayStation platforms
-- Pair RPGs with PlayStation and handheld platforms
-- Pair Sports titles with PlayStation and Nintendo platforms
-- Avoid niche genres on PC (where digital undercount distorts the data)
+Platform-genre synergy is real and concentrated in specific combinations. Pair Shooters with Xbox/PlayStation, RPGs with PlayStation and handheld platforms, and Sports with PlayStation and Nintendo platforms. Avoid niche genres on PC where digital undercount distorts the data.
 
 **4. Tailor Regional Marketing (Measurable Impact)**
-Regional genre preferences are distinct and quantifiable:
-- **North America:** Emphasize Shooters, Sports, and Action in marketing
-- **Japan:** Emphasize RPGs and Visual Novels for local market campaigns
-- **Europe/PAL:** Racing and Platform genres have above-average resonance
+Regional genre preferences are distinct and quantifiable. Emphasize Shooters, Sports, and Action in North America; RPGs and Visual Novels in Japan; Racing and Platform games in Europe/PAL.
 
 **5. Use the Model as Decision Support (Risk Management)**
-The Random Forest model (R² = 0.39) is appropriate for mainstream mid-budget title forecasting but should not be the sole basis for budget allocation. Use the two-stage variant when blockbuster projects are under consideration. Supplement model forecasts with qualitative market research for high-stakes decisions.
+The Random Forest model (R² = 0.39) is appropriate for mainstream mid-budget title forecasting but should not be the sole basis for budget allocation. Use the two-stage variant when blockbuster projects are under consideration.
 
 ### 10.2 Operational Recommendations
 
-- **Deploy Random Forest for general forecasting**, switching to the two-stage variant when blockbuster accuracy is prioritized.
-- **Retrain quarterly** with updated VGChartz data to capture new releases, platform shifts, and evolving market dynamics.
-- **Expand features** by incorporating marketing spend data, IP attributes, user review sentiment, and competitor release timing.
-- **Build regional sub-models** for North America, Europe/PAL, and Japan to address preference heterogeneity and data quality differences.
-- **Actively collect more blockbuster training samples** — the two-stage model demonstrates the architecture works, but blockbuster scarcity is the binding constraint on accuracy.
+- **Deploy Random Forest** for general forecasting; switch to two-stage variant for blockbuster priority.
+- **Retrain quarterly** with updated VGChartz data to capture new releases and platform shifts.
+- **Expand features** by incorporating marketing spend, IP attributes, and user review sentiment.
+- **Build regional sub-models** for NA, Europe/PAL, and Japan to address preference heterogeneity.
+- **Actively collect more blockbuster training samples** — data scarcity, not architecture, is the binding constraint.
 
 ---
 
@@ -579,34 +635,34 @@ The Random Forest model (R² = 0.39) is appropriate for mainstream mid-budget ti
 
 | Limitation | Impact | Mitigation |
 |---|---|---|
-| **Digital sales undercount** | Systematic bias for PC/indie titles; dataset focuses on physical retail | Treat PC forecasts as conservative estimates |
-| **Japan data gap** | 63.7% zero-imputation; poor reliability for Japanese market | Separate regional sub-models recommended |
-| **Blockbuster scarcity** | Only 62 training blockbusters (0.9%) | Two-stage variant partially addresses; data partnerships needed |
-| **Temporal coverage** | Mostly pre-2019 data; limited coverage of PS5/Xbox Series X era | Quarterly retraining required |
-| **High-cardinality encoding** | ~1,000 publishers, ~2,500 developers; overfitting risk for new entities | Conservative predictions for unknown entities |
+| **Digital sales undercount** | Systematic bias for PC/indie titles | Treat PC forecasts as conservative |
+| **Japan data gap** | 63.7% zero-imputation; poor JP reliability | Separate regional sub-models needed |
+| **Blockbuster scarcity** | Only 62 training blockbusters (0.9%) | Two-stage variant partially addresses |
+| **Temporal coverage** | Mostly pre-2019 data | Quarterly retraining required |
+| **High-cardinality encoding** | Overfitting risk for new entities | Conservative predictions for unknowns |
 
 ### 11.2 Methodological Limitations
 
-- **Correlation ≠ Causation:** Feature importance reflects associative relationships. Publisher scale may correlate with better IP and marketing rather than directly driving sales.
-- **No causal inference:** The observational study design cannot establish causal mechanisms. A/B testing or natural experiments would be needed for causal claims.
-- **Single imputation for critic_score:** Median imputation does not account for uncertainty in missing values. Multiple imputation (MICE) could be explored.
-- **Rare genre information loss:** Genres with <1% frequency were merged into "Other", eliminating granularity for niche predictions.
+- **Correlation ≠ Causation:** Feature importance reflects associative relationships. Publisher scale may correlate with better IP rather than directly driving sales.
+- **No causal inference:** The observational study cannot establish causal mechanisms.
+- **Single imputation for critic_score:** Does not account for uncertainty in missing values.
+- **Rare genre information loss:** Genres <1% frequency merged into "Other".
 
 ### 11.3 Potential Failure Modes
 
-1. **New platform/genre prediction:** Models are unreliable for entirely new platforms (e.g., new console generation) or genres with zero historical training examples.
-2. **Blockbuster underestimation:** Even with the two-stage variant, blockbuster prediction carries high uncertainty. Business plans should incorporate wider confidence intervals for high-budget projects.
-3. **New entrant bias:** Target encoding shrinks predictions for unseen publishers toward the global mean, disadvantaging new market entrants without track records.
-4. **Market structure shifts:** Rapid changes in monetization models (subscription services, free-to-play, cloud gaming) could invalidate patterns learned from physical-sales-dominated training data.
+1. **New platform/genre prediction:** Unreliable for entirely new platforms or genres with no historical data.
+2. **Blockbuster underestimation:** Even two-stage variant carries high uncertainty for top-tier titles.
+3. **New entrant bias:** Target encoding shrinks predictions for unseen publishers toward global mean.
+4. **Market structure shifts:** Subscription services, F2P, and cloud gaming could invalidate physical-sales patterns.
 
 ### 11.4 Future Work
 
-1. **Feature expansion:** Integrate marketing spend data, IP franchise attributes, user review sentiment from Metacritic/Steam, and competitor release timing.
-2. **Regional sub-models:** Build separate regression models for NA, Japan, and PAL markets to address preference heterogeneity and data quality differences.
-3. **Causal inference methods:** Apply instrumental variable approaches or difference-in-differences to identify causal effects of platform exclusivity, release timing, and pricing.
-4. **Deep learning exploration:** Test neural network architectures (tabNet, FT-Transformer) on the enriched feature set.
-5. **Temporal backtesting:** Adopt time-based cross-validation to better assess real-world generalization for future release prediction.
-6. **Post-2019 data enrichment:** Actively source post-2019 sales data to capture modern market dynamics, digital distribution trends, and new platform effects.
+1. **Feature expansion:** Integrate marketing spend, IP franchise attributes, user review sentiment.
+2. **Regional sub-models:** Separate regression models for NA, Japan, and PAL markets.
+3. **Causal inference methods:** Instrumental variable or difference-in-differences for causal effects.
+4. **Deep learning exploration:** Test tabNet or FT-Transformer architectures.
+5. **Temporal backtesting:** Time-based cross-validation for real-world generalization assessment.
+6. **Post-2019 data enrichment:** Capture modern market dynamics and digital distribution trends.
 
 ---
 
@@ -616,18 +672,18 @@ This project provides a comprehensive, data-driven analysis of the factors influ
 
 **Three research questions were answered:**
 
-1. **Q1 — Platform-Genre Synergy Matters (Confirmed).** Specific platform-genre combinations command measurable sales premiums, concentrated in the upper quartile. The non-linear nature of these interactions — validated by a 26% R² lift from linear to ensemble models — means that strategic platform-genre positioning is a legitimate competitive lever.
+1. **Q1 — Platform-Genre Synergy Matters (Confirmed).** Specific platform-genre combinations command measurable sales premiums, concentrated in the upper quartile. The 26% R² lift from linear to ensemble models validates platform-genre positioning as a legitimate competitive lever.
 
 2. **Q2 — Regional Markets Are Distinct (Confirmed).** North America, Japan, and Europe/PAL exhibit clearly differentiated genre preferences. Tailoring game portfolios and marketing strategies to regional tastes is empirically justified.
 
-3. **Q3 — Brand Drives Sales Through Two Channels (Confirmed).** Brand scale (volume of releases) dominates as the single strongest sales predictor, while brand prestige (per-title premium) provides additional, separable value. The dual-channel finding has direct implications for strategic partnerships and brand building.
+3. **Q3 — Brand Drives Sales Through Two Channels (Confirmed).** Brand scale (volume of releases) and brand prestige (per-title premium) both contribute meaningfully. The dual-channel finding has direct implications for strategic partnerships and brand building.
 
 **The project delivered:**
 - A cleaned, enriched dataset (8,786 records × 33 features)
-- 12+ EDA visualizations with documented interpretations
-- Three predictive models with the Random Forest achieving R² = 0.394
+- 12+ EDA visualizations with documented interpretations (M4)
+- Three predictive models with Random Forest achieving R² = 0.394 (M5)
 - A novel two-stage blockbuster-aware variant reducing blockbuster RMSE by 6.7%
-- A deployed Streamlit web application for stakeholder use
+- A deployed Streamlit web application for stakeholder use (M6)
 - A comprehensive model card documenting intended use, limitations, and ethical considerations
 
 The video game industry's commercial dynamics are complex and multi-factorial. No single factor determines success. But with rigorous data analysis, the relative importance of each factor can be quantified — and that quantification provides a foundation for more informed, evidence-based decision-making in one of the world's most dynamic entertainment sectors.
@@ -645,9 +701,7 @@ The video game industry's commercial dynamics are complex and multi-factorial. N
 7. McKinney, W. (2010). Data Structures for Statistical Computing in Python. *Proceedings of the 9th Python in Science Conference*, 51–56.
 8. Pedregosa, F., et al. (2011). Scikit-learn: Machine Learning in Python. *Journal of Machine Learning Research*, 12, 2825–2830.
 9. Waskom, M. L. (2021). Seaborn: Statistical data visualization. *Journal of Open Source Software*, 6(60), 3021.
-10. McGrath, R. G., & Nerkar, A. (2004). Leveraging technology, leveraging scale: The competitive implications of technological and market scope. *Advances in Strategic Management*, 21, 255–284.
-11. Enterbrain, Inc. (2023). *Famitsu Game White Paper.* Enterbrain (industry reference for Japan game market data).
-12. ESA (Entertainment Software Association). (2023). *Essential Facts About the Video Game Industry.* Annual industry report.
+10. ESA (Entertainment Software Association). (2023). *Essential Facts About the Video Game Industry.*
 
 ---
 
